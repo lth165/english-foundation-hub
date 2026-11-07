@@ -76,10 +76,12 @@
         <!-- Cột trái: Danh sách bài học -->
         <div class="lg:col-span-4 space-y-3">
           <div class="flex items-center justify-between">
-            <h2 class="text-base font-bold text-slate-800">📚 Danh sách Bài học</h2>
-            <span class="text-xs text-slate-500">Chọn bài để luyện</span>
+            <h2 class="text-base font-bold text-slate-800">📚 Kho Bài nghe (10+ Chủ đề)</h2>
+            <button onclick="toggleCustomLessonModal(true)" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition">
+              ➕ Thêm bài mới
+            </button>
           </div>
-          <div id="lesson-list-container" class="space-y-2.5"></div>
+          <div id="lesson-list-container" class="space-y-2.5 max-h-[600px] overflow-y-auto pr-1"></div>
         </div>
 
         <!-- Cột phải: Trình phát Audio, Transcript song ngữ & Thu âm Shadowing -->
@@ -128,32 +130,35 @@
     </section>
 
     <!-- ==========================================================
-         MODULE 2: LUYỆN PHẢN XẠ CỤM 5 CÂU & SPACED REPETITION
+         MODULE 2: LUYỆN PHẢN XẠ CỤM 5 CÂU & NGỮ PHÁP CHUYÊN SÂU
          ========================================================== -->
     <section id="tab-reflex" class="tab-section hidden space-y-6">
       <div class="max-w-3xl mx-auto space-y-5">
-        <!-- Header chọn chế độ trộn câu Spaced Repetition -->
-        <div class="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 class="text-lg font-extrabold text-slate-900">⚡ Luyện Phản xạ Dịch câu (Cụm 5 câu)</h2>
-            <p class="text-xs sm:text-sm text-slate-500">Kết hợp thuật toán <strong>Levenshtein Distance</strong> bắt lỗi chính tả & <strong>Spaced Repetition</strong> trộn câu cũ/mới.</p>
+        <!-- Thanh chuyển đổi: Luyện Phản xạ 5 câu <-> Ôn Ngữ pháp & Trắc nghiệm -->
+        <div class="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-sm flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
+            <button id="btn-reflex-mode-translate" onclick="switchReflexSubMode('translate')"
+              class="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 text-white shadow-sm transition">
+              ⚡ Phản xạ Dịch câu (5 câu)
+            </button>
+            <button id="btn-reflex-mode-grammar" onclick="switchReflexSubMode('grammar')"
+              class="px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-100 transition">
+              📘 Lý thuyết & Trắc nghiệm Ngữ pháp
+            </button>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <select onchange="startNewReflexBatch(this.value)" class="px-3.5 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-50 outline-none">
+
+          <div id="reflex-filter-controls" class="flex items-center gap-2 shrink-0">
+            <select id="select-reflex-lesson" onchange="startNewReflexBatch(this.value)" class="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 outline-none">
               <option value="all">🔀 Trộn thông minh (Câu cũ + Mới)</option>
-              <option value="lesson-1">Bài 1: Giao tiếp hàng ngày</option>
-              <option value="lesson-2">Bài 2: Gọi đồ ăn & Cà phê</option>
-              <option value="lesson-3">Bài 3: Công việc & Họp nhóm</option>
-              <option value="lesson-4">Bài 4: Du lịch & Sân bay</option>
             </select>
-            <button onclick="startNewReflexBatch()" class="px-3.5 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs sm:text-sm font-semibold transition">
-              Đổi cụm mới
+            <button onclick="startNewReflexBatch()" class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold transition">
+              Đổi cụm
             </button>
           </div>
         </div>
 
-        <!-- Thanh tiến trình 5 câu -->
-        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+        <!-- Khung 1: Thanh tiến trình 5 câu Phản xạ -->
+        <div id="reflex-translate-wrapper" class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
           <div class="flex items-center justify-between text-xs font-bold text-slate-600">
             <span id="reflex-progress-text">Câu 1 / 5</span>
             <span class="text-indigo-600">+10 XP / câu đúng</span>
@@ -165,6 +170,9 @@
           <!-- Nội dung câu hỏi hiện tại -->
           <div id="reflex-card-container" class="pt-2"></div>
         </div>
+
+        <!-- Khung 2: Cẩm nang Lý thuyết & Bài tập Trắc nghiệm Ngữ pháp -->
+        <div id="reflex-grammar-wrapper" class="hidden space-y-4"></div>
       </div>
     </section>
 
@@ -187,13 +195,9 @@
           </div>
 
           <div class="flex items-center gap-2">
-            <span id="vocab-counter-text" class="text-xs font-bold text-slate-500">Từ 1 / 12</span>
-            <select onchange="filterVocabByLesson(this.value)" class="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 outline-none">
-              <option value="all">Tất cả chủ đề (12 từ)</option>
-              <option value="lesson-1">Bài 1: Giao tiếp hàng ngày</option>
-              <option value="lesson-2">Bài 2: Quán cà phê</option>
-              <option value="lesson-3">Bài 3: Công sở</option>
-              <option value="lesson-4">Bài 4: Du lịch</option>
+            <span id="vocab-counter-text" class="text-xs font-bold text-slate-500">Từ 1 / 24</span>
+            <select id="select-vocab-lesson" onchange="filterVocabByLesson(this.value)" class="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 outline-none">
+              <option value="all">Tất cả chủ đề</option>
             </select>
           </div>
         </div>
@@ -388,6 +392,57 @@
       <span class="text-[11px] mt-0.5">4. Tài khoản</span>
     </button>
   </nav>
+
+  <!-- MODAL TẠO BÀI HỌC MỚI (BẰNG AI HOẶC NHẬP THỦ CÔNG) -->
+  <div id="custom-lesson-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-extrabold text-slate-900">➕ Thêm Bài học & Ngữ pháp mới</h3>
+        <button onclick="toggleCustomLessonModal(false)" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Bạn có thể nhập chủ đề muốn học để <strong>AI tự động soạn trọn bộ Bài nghe + Câu phản xạ + Từ vựng</strong> (nếu đã nhập Gemini API Key), hoặc tự thêm câu song ngữ của riêng bạn.
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Tên bài học / Chủ đề & Ngữ pháp:</label>
+          <input id="custom-lesson-title" type="text" placeholder="VD: Bài 11: Phỏng vấn xin việc (Hiện tại hoàn thành)"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:border-indigo-600" />
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button onclick="generateLessonWithAI()" id="btn-generate-ai-lesson"
+            class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-95 text-white text-xs sm:text-sm font-semibold shadow-sm transition">
+            ✨ Nhờ AI tự động soạn bài học theo chủ đề trên
+          </button>
+        </div>
+
+        <div class="relative flex py-1 items-center">
+          <div class="flex-grow border-t border-slate-200"></div>
+          <span class="flex-shrink mx-3 text-[11px] text-slate-400 uppercase font-semibold">Hoặc tự nhập nội dung</span>
+          <div class="flex-grow border-t border-slate-200"></div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">
+            Danh sách câu song ngữ (Mỗi dòng 1 câu theo cú pháp: <code>Câu tiếng Anh | Nghĩa tiếng Việt | Giải thích ngữ pháp</code>):
+          </label>
+          <textarea id="custom-lesson-lines" rows="4"
+            placeholder="I have worked here for two years. | Tôi đã làm việc ở đây được 2 năm. | Hiện tại hoàn thành với for + khoảng thời gian&#10;Could you tell me more about the role? | Bạn có thể chia sẻ thêm về vị trí này không? | Câu hỏi lịch sự với Could you..."
+            class="w-full p-3 rounded-xl border border-slate-300 text-xs font-mono outline-none focus:border-indigo-600"></textarea>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="toggleCustomLessonModal(false)" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold">Hủy</button>
+          <button onclick="saveCustomLessonManual()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm">
+            💾 Lưu vào kho bài học
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-20 md:bottom-6 right-4 left-4 md:left-auto md:w-96 z-50 space-y-2 pointer-events-auto"></div>
