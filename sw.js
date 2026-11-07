@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lh-hub-v3';
+const CACHE_NAME = 'lh-hub-v4';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
