@@ -1,8 +1,10 @@
-/* Custom Styles for English Foundation Hub (PWA & Mobile/Desktop Optimized) */
+/* Custom Styles for lehuedanghocta — White & #9DCCFF Gradient Theme */
 
 :root {
-  --primary: #4f46e5;
-  --primary-dark: #4338ca;
+  --brand-light: #9DCCFF;
+  --brand-mid: #6BB2FF;
+  --brand-dark: #1E40AF;
+  --brand-text: #0F2942;
   --emerald: #10b981;
 }
 
@@ -12,8 +14,42 @@
 
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #f8fafc;
+  background-color: #ffffff;
   color: #0f172a;
+}
+
+/* Chủ đạo Gradient #9DCCFF cho các khung, nút và mục đậm */
+.bg-brand-gradient {
+  background: linear-gradient(135deg, #9DCCFF 0%, #5CA5FF 100%);
+  color: #09223B;
+}
+
+.bg-brand-gradient-soft {
+  background: linear-gradient(135deg, rgba(157, 204, 255, 0.38) 0%, rgba(157, 204, 255, 0.14) 100%);
+}
+
+.bg-brand-card-header {
+  background: linear-gradient(135deg, #9DCCFF 0%, #7ABBFF 100%);
+  color: #0B2545;
+}
+
+.border-brand {
+  border-color: #9DCCFF;
+}
+
+.btn-brand {
+  background: linear-gradient(135deg, #9DCCFF 0%, #66AEFF 100%);
+  color: #09223B;
+  font-weight: 700;
+  border: 1px solid #7EB8FF;
+  box-shadow: 0 2px 8px rgba(157, 204, 255, 0.45);
+  transition: all 0.2s ease;
+}
+
+.btn-brand:hover {
+  background: linear-gradient(135deg, #8BC2FF 0%, #4E9FFF 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 174, 255, 0.5);
 }
 
 /* 3D Flashcard Flip */
@@ -41,11 +77,13 @@ body {
   height: 100%;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  border-radius: 1.25rem;
+  border-radius: 1.5rem;
 }
 
 .flip-card-back {
   transform: rotateY(180deg);
+  background: linear-gradient(135deg, #9DCCFF 0%, #56A3FF 100%);
+  color: #082038;
 }
 
 /* Recording Pulse Animation */
@@ -68,31 +106,20 @@ body {
   animation: pulse-ring 1.5s infinite;
 }
 
-/* Audio Equalizer Bars */
-@keyframes eq-bar {
-  0%, 100% { height: 6px; }
-  50% { height: 20px; }
-}
-
-.eq-bar-1 { animation: eq-bar 0.7s ease-in-out infinite; }
-.eq-bar-2 { animation: eq-bar 0.5s ease-in-out infinite 0.15s; }
-.eq-bar-3 { animation: eq-bar 0.8s ease-in-out infinite 0.3s; }
-.eq-bar-4 { animation: eq-bar 0.6s ease-in-out infinite 0.1s; }
-
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #f8fafc;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #9DCCFF;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #66AEFF;
 }
 
 /* Mobile Safe Area Padding */
