@@ -393,6 +393,22 @@ class AccountSyncManager {
     // Gộp bài học đã hoàn thành
     const setLessons = new Set([...(local.completedLessons || []), ...(remote.completedLessons || [])]);
     merged.completedLessons = Array.from(setLessons);
+
+    // Gộp các bài học tự tạo (Custom Dataset)
+    if (local.customDataset || remote.customDataset) {
+      merged.customDataset = {
+        lessons: [...(remote.customDataset?.lessons || [])],
+        questions: [...(remote.customDataset?.questions || [])],
+        vocabulary: [...(remote.customDataset?.vocabulary || [])]
+      };
+      (local.customDataset?.lessons || []).forEach((l) => {
+        if (!merged.customDataset.lessons.some((x) => x.id === l.id)) merged.customDataset.lessons.push(l);
+      });
+      (local.customDataset?.questions || []).forEach((q) => {
+        if (!merged.customDataset.questions.some((x) => x.id === q.id)) merged.customDataset.questions.push(q);
+      });
+    }
+
     merged.updatedAt = new Date().toISOString();
     return merged;
   }
