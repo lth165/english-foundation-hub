@@ -40,6 +40,8 @@ const AppState = {
 document.addEventListener('DOMContentLoaded', async () => {
   await loadDataset();
   initUserSession();
+  mergeUserCustomLessons();
+  populateLessonDropdowns();
   setupNavigation();
   setupAccountAndSettingsEvents();
   checkAndUpdateDailyStreak(false);
@@ -49,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderHeaderStats();
   renderListeningModule();
   startNewReflexBatch();
+  renderGrammarHub();
   initVocabModule();
   renderProgressModule();
 
@@ -1618,3 +1621,294 @@ function shuffleArray(arr) {
   }
   return copy;
 }
+
+/* ==========================================
+   10. CẨM NANG NGỮ PHÁP & TỰ TẠO BÀI HỌC MỚI (AI / THỦ CÔNG)
+   ========================================== */
+function mergeUserCustomLessons() {
+  const custom = AppState.userState?.customDataset;
+  if (!custom) return;
+
+  if (Array.isArray(custom.lessons)) {
+    custom.lessons.forEach((cl) => {
+      if (!AppState.dataset.lessons.some((l) => l.id === cl.id)) {
+        AppState.dataset.lessons.push(cl);
+      }
+    });
+  }
+  if (Array.isArray(custom.questions)) {
+    custom.questions.forEach((cq) => {
+      if (!AppState.dataset.questions.some((q) => q.id === cq.id)) {
+        AppState.dataset.questions.push(cq);
+      }
+    });
+  }
+  if (Array.isArray(custom.vocabulary)) {
+    custom.vocabulary.forEach((cv) => {
+      if (!AppState.dataset.vocabulary.some((v) => v.id === cv.id)) {
+        AppState.dataset.vocabulary.push(cv);
+      }
+    });
+  }
+}
+
+function populateLessonDropdowns() {
+  const lessons = AppState.dataset.lessons || [];
+  const totalQ = (AppState.dataset.questions || []).length;
+  const totalV = (AppState.dataset.vocabulary || []).length;
+
+  const reflexSelect = document.getElementById('select-reflex-lesson');
+  if (reflexSelect) {
+    reflexSelect.innerHTML =
+      `<option value="all">🔀 Trộn thông minh (${totalQ} câu cũ + mới)</option>` +
+      lessons.map((l) => `<option value="${l.id}">${l.title}</option>`).join('');
+  }
+
+  const vocabSelect = document.getElementById('select-vocab-lesson');
+  if (vocabSelect) {
+    vocabSelect.innerHTML =
+      `<option value="all">Tất cả chủ đề (${totalV} từ)</option>` +
+      lessons.map((l) => `<option value="${l.id}">${l.title}</option>`).join('');
+  }
+}
+
+window.switchReflexSubMode = function (mode) {
+  const isTranslate = mode === 'translate';
+  document.getElementById('reflex-translate-wrapper')?.classList.toggle('hidden', !isTranslate);
+  document.getElementById('reflex-filter-controls')?.classList.toggle('hidden', !isTranslate);
+  document.getElementById('reflex-grammar-wrapper')?.classList.toggle('hidden', isTranslate);
+
+  const btnTrans = document.getElementById('btn-reflex-mode-translate');
+  const btnGram = document.getElementById('btn-reflex-mode-grammar');
+  if (btnTrans) {
+    btnTrans.className = isTranslate
+      ? 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 text-white shadow-sm transition'
+      : 'px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-100 transition';
+  }
+  if (btnGram) {
+    btnGram.className = !isTranslate
+      ? 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 text-white shadow-sm transition'
+      : 'px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-100 transition';
+  }
+  if (!isTranslate) {
+    renderGrammarHub();
+  }
+};
+
+function renderGrammarHub() {
+  const wrapper = document.getElementById('reflex-grammar-wrapper');
+  if (!wrapper) return;
+
+  const topics = AppState.dataset.grammarTopics || [];
+  if (topics.length === 0) {
+    wrapper.innerHTML = `<p class="text-center text-slate-500 py-8">Chưa có chủ điểm ngữ pháp nào.</p>`;
+    return;
+  }
+
+  wrapper.innerHTML = topics
+    .map((t, tIdx) => {
+      return `
+        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-base sm:text-lg font-extrabold text-slate-900">${t.title}</h3>
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">Cấp độ ${t.level}</span>
+          </div>
+
+          <div class="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100 font-mono text-xs sm:text-sm font-bold text-indigo-900">
+            📐 Công thức: ${t.formula}
+          </div>
+
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">${t.summary}</p>
+
+          <div class="space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70 text-xs sm:text-sm">
+            <p class="font-semibold text-slate-700">💡 Ví dụ thực tế:</p>
+            ${t.examples.map((ex) => `<p class="text-slate-600 pl-2">• ${ex}</p>`).join('')}
+          </div>
+
+          <!-- Bài tập trắc nghiệm nhanh -->
+          <div class="pt-3 border-t border-slate-100 space-y-2.5">
+            <p class="text-xs font-bold uppercase tracking-wider text-indigo-600">✍️ Bài tập áp dụng (+10 XP):</p>
+            <p class="text-sm font-semibold text-slate-800">${t.quiz.question}</p>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              ${t.quiz.options
+                .map(
+                  (opt, oIdx) => `
+                  <button onclick="checkGrammarQuizOption(${tIdx}, ${oIdx})"
+                    id="gquiz-btn-${tIdx}-${oIdx}"
+                    class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-indigo-50 text-xs sm:text-sm font-semibold text-slate-700 transition">
+                    ${opt}
+                  </button>
+                `
+                )
+                .join('')}
+            </div>
+            <div id="gquiz-explain-${tIdx}" class="hidden p-3 rounded-xl text-xs"></div>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+window.checkGrammarQuizOption = function (topicIdx, optionIdx) {
+  const topic = (AppState.dataset.grammarTopics || [])[topicIdx];
+  if (!topic) return;
+
+  const isCorrect = optionIdx === topic.quiz.answer;
+  const explainBox = document.getElementById(`gquiz-explain-${topicIdx}`);
+  if (!explainBox) return;
+
+  explainBox.classList.remove('hidden');
+  if (isCorrect) {
+    explainBox.className = 'p-3 rounded-xl text-xs bg-emerald-50 border border-emerald-200 text-emerald-900';
+    explainBox.innerHTML = `✅ <strong>Chính xác!</strong> ${topic.quiz.explanation}`;
+    addXP(10, `Hoàn thành bài tập ${topic.title}`);
+    checkAndUpdateDailyStreak(true);
+  } else {
+    explainBox.className = 'p-3 rounded-xl text-xs bg-rose-50 border border-rose-200 text-rose-900';
+    explainBox.innerHTML = `❌ <strong>Chưa đúng!</strong> Đáp án đúng là <strong>"${
+      topic.quiz.options[topic.quiz.answer]
+    }"</strong>. ${topic.quiz.explanation}`;
+  }
+};
+
+window.toggleCustomLessonModal = function (show) {
+  const modal = document.getElementById('custom-lesson-modal');
+  if (modal) modal.classList.toggle('hidden', !show);
+};
+
+window.saveCustomLessonManual = function () {
+  const titleEl = document.getElementById('custom-lesson-title');
+  const linesEl = document.getElementById('custom-lesson-lines');
+  const title = titleEl?.value?.trim();
+  const rawLines = linesEl?.value?.trim();
+
+  if (!title || !rawLines) {
+    showToast('Vui lòng nhập Tên bài học và ít nhất 1 dòng câu song ngữ!', 'error');
+    return;
+  }
+
+  const lines = rawLines
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const newLessonId = `custom-${Date.now()}`;
+  const transcript = [];
+  const newQuestions = [];
+
+  lines.forEach((line, idx) => {
+    const parts = line.split('|').map((p) => p.trim());
+    const en = parts[0] || '';
+    const vi = parts[1] || 'Câu dịch tiếng Việt';
+    const grammarNote = parts[2] || 'Cấu trúc câu giao tiếp thông dụng.';
+    if (!en) return;
+
+    transcript.push({
+      id: `${newLessonId}-s${idx + 1}`,
+      en,
+      vi,
+      ipa: ''
+    });
+
+    newQuestions.push({
+      id: `${newLessonId}-q${idx + 1}`,
+      lessonId: newLessonId,
+      vi,
+      accepted_answers: [en.replace(/[.,?!]+$/, '')],
+      hint: en.split(' ').slice(0, 3).join(' ') + '...',
+      grammar: grammarNote
+    });
+  });
+
+  if (transcript.length === 0) {
+    showToast('Không tìm thấy câu hợp lệ nào!', 'error');
+    return;
+  }
+
+  const newLessonObj = {
+    id: newLessonId,
+    title,
+    level: 'Tự tạo',
+    duration: '1:30',
+    topic: 'Custom Lesson',
+    audioUrl: '',
+    description: `Bài học tự tạo gồm ${transcript.length} câu giao tiếp và phản xạ ngữ pháp.`,
+    transcript
+  };
+
+  if (!AppState.userState.customDataset) {
+    AppState.userState.customDataset = { lessons: [], questions: [], vocabulary: [] };
+  }
+  AppState.userState.customDataset.lessons.push(newLessonObj);
+  AppState.userState.customDataset.questions.push(...newQuestions);
+
+  saveState();
+  mergeUserCustomLessons();
+  populateLessonDropdowns();
+  AppState.selectedLessonId = newLessonId;
+  renderListeningModule();
+  startNewReflexBatch();
+  toggleCustomLessonModal(false);
+
+  if (titleEl) titleEl.value = '';
+  if (linesEl) linesEl.value = '';
+  showToast(`🎉 Đã thêm bài học mới "${title}" thành công!`, 'success');
+};
+
+window.generateLessonWithAI = async function () {
+  const apiKey = AppState.userState?.settings?.apiKey?.trim();
+  if (!apiKey) {
+    showToast('Bạn hãy nhập Gemini API Key miễn phí trong Tab 4 (Cài đặt) để dùng tính năng AI tự soạn bài nhé!', 'error');
+    return;
+  }
+  const titleEl = document.getElementById('custom-lesson-title');
+  const topicPrompt = titleEl?.value?.trim();
+  if (!topicPrompt) {
+    showToast('Hãy nhập tên Chủ đề hoặc Ngữ pháp bạn muốn AI soạn vào ô phía trên!', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-generate-ai-lesson');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ AI đang biên soạn bài nghe & ngữ pháp...';
+  }
+
+  try {
+    const prompt = `Hãy đóng vai giáo viên tiếng Anh, tạo 5 câu giao tiếp tiếng Anh thực tế theo chủ đề/ngữ pháp: "${topicPrompt}".
+Trả về kết quả CHỈ GỒM 5 DÒNG, mỗi dòng đúng định dạng:
+Câu tiếng Anh | Nghĩa tiếng Việt | Giải thích ngữ pháp ngắn gọn
+Không thêm bất kỳ lời dẫn hay ký hiệu markdown nào khác.`;
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+        apiKey
+      )}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      }
+    );
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!text) throw new Error(data?.error?.message || 'Không nhận được dữ liệu từ AI.');
+
+    const linesEl = document.getElementById('custom-lesson-lines');
+    if (linesEl) {
+      linesEl.value = text.replace(/```/g, '').trim();
+    }
+    showToast('✨ AI đã soạn xong 5 câu! Bạn hãy bấm "Lưu vào kho bài học" nhé.', 'success');
+  } catch (err) {
+    showToast('Lỗi tạo bài bằng AI: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✨ Nhờ AI tự động soạn bài học theo chủ đề trên';
+    }
+  }
+};
+
