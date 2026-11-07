@@ -723,8 +723,40 @@ window.changeSpeechSpeed = function (speed) {
   showToast(`Đã chỉnh tốc độ đọc: ${speed}x`, 'info');
 };
 
+function ensureDayLog(dateStr) {
+  if (!AppState.userState.streak) {
+    AppState.userState.streak = { count: 0, best: 0, lastStudyDate: null, historyDates: {} };
+  }
+  if (!AppState.userState.streak.historyDates) {
+    AppState.userState.streak.historyDates = {};
+  }
+  if (!AppState.userState.streak.historyDates[dateStr]) {
+    AppState.userState.streak.historyDates[dateStr] = {
+      xp: 0,
+      actions: 0,
+      wrongQuestions: [],
+      correctQuestions: [],
+      masteredQuestions: [],
+      masteredListening: [],
+      masteredVocab: []
+    };
+  }
+  const log = AppState.userState.streak.historyDates[dateStr];
+  if (!Array.isArray(log.wrongQuestions)) log.wrongQuestions = [];
+  if (!Array.isArray(log.correctQuestions)) log.correctQuestions = [];
+  if (!Array.isArray(log.masteredQuestions)) log.masteredQuestions = [];
+  if (!Array.isArray(log.masteredListening)) log.masteredListening = [];
+  if (!Array.isArray(log.masteredVocab)) log.masteredVocab = [];
+  return log;
+}
+
 window.markCurrentLessonCompleted = function () {
   const lessonId = AppState.selectedLessonId;
+  const today = getTodayDateString();
+  const dayLog = ensureDayLog(today);
+  if (!dayLog.masteredListening.includes(lessonId)) {
+    dayLog.masteredListening.push(lessonId);
+  }
   if (!AppState.userState.completedLessons.includes(lessonId)) {
     AppState.userState.completedLessons.push(lessonId);
     addXP(20, 'Hoàn thành bài nghe theo lộ trình');
@@ -732,6 +764,7 @@ window.markCurrentLessonCompleted = function () {
     saveState();
     renderListeningModule();
   } else {
+    saveState();
     showToast('Bài học này đã được đánh dấu hoàn thành!', 'info');
   }
 };
@@ -895,28 +928,42 @@ window.startNewReflexBatch = function (filterMode = null) {
   const history = AppState.userState.questionHistory || {};
   const todayStr = getTodayDateString();
 
+  // Lọc bỏ các câu người dùng đã chủ động tích chọn "Đã thạo" (trừ khi đã thạo hết 100%)
+  let candidateQuestions = allQuestions.filter((q) => !history[q.id]?.mastered);
+  if (candidateQuestions.length === 0) {
+    candidateQuestions = [...allQuestions];
+  }
+
   let pool = [];
   if (AppState.reflexFilterLesson !== 'all' && AppState.reflexFilterLesson !== 'spaced') {
-    pool = allQuestions.filter((q) => q.lessonId === AppState.reflexFilterLesson);
+    const lessonQuestions = candidateQuestions.filter((q) => q.lessonId === AppState.reflexFilterLesson);
+    pool = lessonQuestions.length > 0 ? lessonQuestions : allQuestions.filter((q) => q.lessonId === AppState.reflexFilterLesson);
   } else {
-    const dueOrOld = [];
+    // Ưu tiên số 1: Các câu làm SAI đang trong chu kỳ bắt buộc lặp lại 3 ngày
+    const wrongRepeat3Days = [];
+    const normalReview = [];
     const unseen = [];
 
-    allQuestions.forEach((q) => {
+    candidateQuestions.forEach((q) => {
       const h = history[q.id];
       if (!h) {
         unseen.push(q);
+      } else if (h.repeatUntilDate && h.repeatUntilDate >= todayStr) {
+        wrongRepeat3Days.push(q);
       } else {
-        dueOrOld.push(q);
+        normalReview.push(q);
       }
     });
 
-    const pickedOld = shuffleArray(dueOrOld).slice(0, 2);
-    const pickedNew = shuffleArray(unseen).slice(0, 5 - pickedOld.length);
-    pool = shuffleArray([...pickedOld, ...pickedNew]);
+    const pickedRepeat3Days = shuffleArray(wrongRepeat3Days).slice(0, 3);
+    const pickedReview = shuffleArray(normalReview).slice(0, Math.max(0, 3 - pickedRepeat3Days.length));
+    const neededNew = Math.max(0, 5 - pickedRepeat3Days.length - pickedReview.length);
+    const pickedNew = shuffleArray(unseen).slice(0, neededNew);
+
+    pool = shuffleArray([...pickedRepeat3Days, ...pickedReview, ...pickedNew]);
 
     if (pool.length < 5) {
-      const remaining = allQuestions.filter((q) => !pool.some((p) => p.id === q.id));
+      const remaining = candidateQuestions.filter((q) => !pool.some((p) => p.id === q.id));
       pool = [...pool, ...shuffleArray(remaining).slice(0, 5 - pool.length)];
     }
   }
@@ -927,9 +974,11 @@ window.startNewReflexBatch = function (filterMode = null) {
   AppState.reflexAnswered = false;
 
   renderReflexQuestion();
+  renderDailyReflexTracker();
 };
 
 function renderReflexQuestion() {
+  renderDailyReflexTracker();
   const container = document.getElementById('reflex-card-container');
   if (!container) return;
 
@@ -946,6 +995,8 @@ function renderReflexQuestion() {
 
   const q = ensureWordPromptsForQuestion(batch[AppState.reflexIndex]);
   const h = (AppState.userState.questionHistory || {})[q.id];
+  const todayStr = getTodayDateString();
+  const isIn3DayPenalty = h?.repeatUntilDate && h.repeatUntilDate >= todayStr && !h.mastered;
   const isReviewQuestion = !!h;
   const progressPercent = Math.round((AppState.reflexIndex / batch.length) * 100);
 
@@ -987,9 +1038,19 @@ function renderReflexQuestion() {
             📌 ${q.sentenceType || 'Câu giao tiếp'}
           </span>
           <span class="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
-            isReviewQuestion ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+            isIn3DayPenalty
+              ? 'bg-rose-100 text-rose-800 border border-rose-300'
+              : isReviewQuestion
+              ? 'bg-amber-100 text-amber-800'
+              : 'bg-emerald-100 text-emerald-800'
           }">
-            ${isReviewQuestion ? '🔄 Ôn tập Spaced Repetition' : '✨ Câu mới'}
+            ${
+              isIn3DayPenalty
+                ? `🔥 Bắt buộc lặp 3 ngày (đến ${h.repeatUntilDate})`
+                : isReviewQuestion
+                ? '🔄 Ôn tập Spaced Repetition'
+                : '✨ Câu mới'
+            }
           </span>
         </div>
         <button onclick="toggleReflexHint()" class="text-xs font-bold text-blue-700 hover:underline">
@@ -1115,11 +1176,14 @@ window.checkReflexAnswer = function () {
   const evaluation = evaluateTranslation(userRaw, q.accepted_answers);
 
   AppState.reflexAnswered = true;
-  recordQuestionAttempt(q.id, evaluation.isPass);
+  recordQuestionAttempt(q, evaluation.isPass, userRaw);
+  renderDailyReflexTracker();
 
   if (evaluation.isPass) {
     AppState.reflexScore++;
     addXP(10, 'Hoàn thiện đúng câu phản xạ');
+    checkAndUpdateDailyStreak(true);
+  } else {
     checkAndUpdateDailyStreak(true);
   }
 
@@ -1375,27 +1439,192 @@ function buildWordDiffHtml(userStr, targetStr) {
     .join(' ');
 }
 
-function recordQuestionAttempt(questionId, isCorrect) {
+/**
+ * Ghi nhận kết quả câu phản xạ:
+ * - Nếu SAI: Tự động gán chu kỳ lặp lại 3 ngày tiếp theo (repeatUntilDate = today + 3 ngày).
+ *   Nếu trong 3 ngày đó lại làm SAI tiếp thì tự động gia hạn thêm 3 ngày nữa tính từ ngày sai mới nhất!
+ * - Nếu ĐÚNG: Ghi vào cột Câu Đúng trong ngày hôm nay để người dùng có thể bấm chọn "Đã thạo" (hoặc để nguyên ôn tiếp).
+ */
+function recordQuestionAttempt(questionObjOrId, isCorrect, userRaw = '') {
+  const questionId = typeof questionObjOrId === 'string' ? questionObjOrId : questionObjOrId.id;
+  const qObj =
+    typeof questionObjOrId === 'object'
+      ? questionObjOrId
+      : (AppState.dataset.questions || []).find((x) => x.id === questionId);
+
   if (!AppState.userState.questionHistory) {
     AppState.userState.questionHistory = {};
   }
+  const today = getTodayDateString();
+  const dayLog = ensureDayLog(today);
+
   const prev = AppState.userState.questionHistory[questionId] || {
     attempts: 0,
     correct: 0,
-    interval: 0
+    interval: 0,
+    mastered: false,
+    repeatUntilDate: null
   };
+
   prev.attempts += 1;
+  prev.lastReviewed = today;
+
+  const entrySummary = {
+    id: questionId,
+    vi: qObj?.vi || '',
+    en: qObj?.accepted_answers?.[0] || '',
+    userAnswer: userRaw,
+    updatedAt: new Date().toISOString()
+  };
+
   if (isCorrect) {
     prev.correct += 1;
+    prev.lastStatus = 'correct';
     prev.interval = prev.interval === 0 ? 1 : Math.min(30, prev.interval * 2);
+    prev.nextReview = addDaysToDateString(today, prev.interval);
+
+    // Cập nhật vào cột Câu ĐÚNG trong ngày hôm nay
+    const idxCorr = dayLog.correctQuestions.findIndex((x) => x.id === questionId);
+    if (idxCorr >= 0) {
+      dayLog.correctQuestions[idxCorr] = entrySummary;
+    } else {
+      dayLog.correctQuestions.unshift(entrySummary);
+    }
   } else {
+    // Làm SAI -> Bắt buộc lặp lại trong 3 ngày tiếp theo (nếu đang trong 3 ngày mà sai tiếp thì lặp tiếp 3 ngày nữa!)
+    prev.lastStatus = 'wrong';
+    prev.mastered = false;
     prev.interval = 1;
+    prev.repeatDaysLeft = 3;
+    prev.repeatUntilDate = addDaysToDateString(today, 3);
+    prev.nextReview = addDaysToDateString(today, 1);
+
+    entrySummary.repeatUntilDate = prev.repeatUntilDate;
+
+    // Cập nhật vào cột Câu SAI trong ngày hôm nay
+    const idxWrong = dayLog.wrongQuestions.findIndex((x) => x.id === questionId);
+    if (idxWrong >= 0) {
+      dayLog.wrongQuestions[idxWrong] = entrySummary;
+    } else {
+      dayLog.wrongQuestions.unshift(entrySummary);
+    }
+    // Bỏ khỏi danh sách Đã thạo của hôm nay nếu trước đó lỡ tích
+    dayLog.masteredQuestions = dayLog.masteredQuestions.filter((id) => id !== questionId);
+
+    showToast(`🔄 Câu này đã được thêm vào lịch ôn bắt buộc trong 3 ngày tới (đến ${prev.repeatUntilDate})!`, 'info');
   }
-  prev.lastReviewed = getTodayDateString();
-  prev.nextReview = addDaysToDateString(prev.lastReviewed, prev.interval);
 
   AppState.userState.questionHistory[questionId] = prev;
   saveState();
+}
+
+/**
+ * Bật / Tắt trạng thái "Đã thạo" cho câu phản xạ đúng
+ */
+window.toggleReflexQuestionMastered = function (questionId) {
+  if (!AppState.userState.questionHistory) {
+    AppState.userState.questionHistory = {};
+  }
+  const today = getTodayDateString();
+  const dayLog = ensureDayLog(today);
+  const qHist = AppState.userState.questionHistory[questionId] || {
+    attempts: 1,
+    correct: 1,
+    interval: 1,
+    lastReviewed: today
+  };
+
+  qHist.mastered = !qHist.mastered;
+  if (qHist.mastered) {
+    qHist.masteredAt = today;
+    qHist.repeatUntilDate = null;
+    qHist.repeatDaysLeft = 0;
+    if (!dayLog.masteredQuestions.includes(questionId)) {
+      dayLog.masteredQuestions.push(questionId);
+    }
+    showToast('🏆 Đã đánh dấu "Đã thạo"! Câu này đã được ghi nhận vào Lịch sử chuyên cần.', 'success');
+  } else {
+    qHist.masteredAt = null;
+    dayLog.masteredQuestions = dayLog.masteredQuestions.filter((id) => id !== questionId);
+    showToast('🔄 Đã bỏ chọn "Đã thạo" để bạn tiếp tục ôn thêm câu này!', 'info');
+  }
+
+  AppState.userState.questionHistory[questionId] = qHist;
+  saveState();
+  renderDailyReflexTracker();
+  if (AppState.activeTab === 'progress') {
+    renderProgressModule();
+  }
+};
+
+/**
+ * Hiển thị Ô nhỏ 2 cột trong phần Phản xạ (Chỉ tính trong ngày hôm nay):
+ * - Cột 1: Các câu SAI hôm nay (Tự động lặp 3 ngày)
+ * - Cột 2: Các câu ĐÚNG hôm nay (Có nút chọn Đã thạo hoặc không)
+ */
+function renderDailyReflexTracker() {
+  const wrongCol = document.getElementById('today-wrong-reflex-col');
+  const correctCol = document.getElementById('today-correct-reflex-col');
+  const wrongBadge = document.getElementById('today-wrong-count-badge');
+  const correctBadge = document.getElementById('today-correct-count-badge');
+  if (!wrongCol || !correctCol) return;
+
+  const today = getTodayDateString();
+  const dayLog = ensureDayLog(today);
+  const wrongList = dayLog.wrongQuestions || [];
+  const correctList = dayLog.correctQuestions || [];
+  const qHistMap = AppState.userState.questionHistory || {};
+
+  if (wrongBadge) wrongBadge.textContent = `${wrongList.length} câu`;
+  if (correctBadge) correctBadge.textContent = `${correctList.length} câu`;
+
+  if (wrongList.length === 0) {
+    wrongCol.innerHTML = `<p class="text-slate-400 italic py-4 text-center">Hôm nay bạn chưa làm sai câu nào. Rất tốt!</p>`;
+  } else {
+    wrongCol.innerHTML = wrongList
+      .map((item) => {
+        const repeatUntil = qHistMap[item.id]?.repeatUntilDate || item.repeatUntilDate || addDaysToDateString(today, 3);
+        return `
+          <div class="p-3 rounded-xl bg-white border border-rose-200 shadow-sm space-y-1">
+            <div class="flex items-start justify-between gap-2">
+              <p class="font-bold text-slate-900 leading-snug">${item.vi}</p>
+              <span class="shrink-0 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
+                🔄 Lặp tới ${repeatUntil.slice(5)}
+              </span>
+            </div>
+            <p class="text-[11px] text-rose-600 line-through">Bạn gõ: ${item.userAnswer || '...'}</p>
+            <p class="text-xs font-semibold text-blue-700">Đáp án: ${item.en}</p>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  if (correctList.length === 0) {
+    correctCol.innerHTML = `<p class="text-slate-500 italic py-4 text-center">Hoàn thành các câu đúng ở trên để chọn "Đã thạo" tại đây.</p>`;
+  } else {
+    correctCol.innerHTML = correctList
+      .map((item) => {
+        const isMastered = !!qHistMap[item.id]?.mastered;
+        return `
+          <div class="p-3 rounded-xl bg-white border border-[#9DCCFF] shadow-sm flex items-center justify-between gap-2.5">
+            <div class="min-w-0 flex-1 space-y-0.5">
+              <p class="font-bold text-slate-900 truncate" title="${item.vi}">${item.vi}</p>
+              <p class="text-xs font-semibold text-emerald-700 truncate" title="${item.en}">${item.en}</p>
+            </div>
+            <button onclick="toggleReflexQuestionMastered('${item.id}')"
+              class="shrink-0 px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold transition ${
+                isMastered
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-[#9DCCFF]/35 hover:bg-brand-gradient text-slate-900 border border-[#9DCCFF]'
+              }" title="Bấm để bật/tắt trạng thái Đã thạo">
+              ${isMastered ? '✅ Đã thạo' : '☑️ Chọn Đã thạo'}
+            </button>
+          </div>
+        `;
+      })
+      .join('');
+  }
 }
 
 /* ==========================================
@@ -1585,11 +1814,18 @@ window.nextVocabCard = function () {
 
 window.toggleMasteredVocab = function (vocabId) {
   if (!AppState.userState.vocabProgress) AppState.userState.vocabProgress = {};
+  const today = getTodayDateString();
+  const dayLog = ensureDayLog(today);
   const curr = AppState.userState.vocabProgress[vocabId] || { status: 'learning', typedCount: 0 };
   if (curr.status === 'mastered') {
     curr.status = 'learning';
+    dayLog.masteredVocab = dayLog.masteredVocab.filter((id) => id !== vocabId);
   } else {
     curr.status = 'mastered';
+    curr.masteredAt = today;
+    if (!dayLog.masteredVocab.includes(vocabId)) {
+      dayLog.masteredVocab.push(vocabId);
+    }
     addXP(5, 'Thuộc từ vựng mới');
     checkAndUpdateDailyStreak(true);
   }
@@ -1628,10 +1864,16 @@ window.handleVocabTypingInput = function (val) {
   if (val.trim().toLowerCase() === item.word.toLowerCase()) {
     speakText(item.word);
     if (!AppState.userState.vocabProgress) AppState.userState.vocabProgress = {};
+    const today = getTodayDateString();
+    const dayLog = ensureDayLog(today);
     const curr = AppState.userState.vocabProgress[item.id] || { status: 'learning', typedCount: 0 };
     curr.typedCount = (curr.typedCount || 0) + 1;
     curr.status = 'mastered';
+    curr.masteredAt = today;
     AppState.userState.vocabProgress[item.id] = curr;
+    if (!dayLog.masteredVocab.includes(item.id)) {
+      dayLog.masteredVocab.push(item.id);
+    }
 
     addXP(5, `Gõ chính xác từ "${item.word}"`);
     checkAndUpdateDailyStreak(true);
@@ -1656,7 +1898,7 @@ window.revealNextLetter = function () {
 };
 
 /* ==========================================
-   6. MODULE 4: TIẾN ĐỘ, STREAK, CALENDAR & TÀI KHOẢN
+   6. MODULE 4: TIẾN ĐỘ, STREAK, LỊCH SỬ CHUYÊN CẦN CHI TIẾT & TÀI KHOẢN
    ========================================== */
 function checkAndUpdateDailyStreak(didStudyAction = false) {
   const s = AppState.userState;
@@ -1667,11 +1909,8 @@ function checkAndUpdateDailyStreak(didStudyAction = false) {
   const yesterday = addDaysToDateString(today, -1);
 
   if (didStudyAction) {
-    if (!s.streak.historyDates) s.streak.historyDates = {};
-    if (!s.streak.historyDates[today]) {
-      s.streak.historyDates[today] = { xp: 0, actions: 0 };
-    }
-    s.streak.historyDates[today].actions += 1;
+    const dayLog = ensureDayLog(today);
+    dayLog.actions += 1;
 
     if (s.streak.lastStudyDate !== today) {
       if (s.streak.lastStudyDate === yesterday) {
@@ -1695,20 +1934,27 @@ function checkAndUpdateDailyStreak(didStudyAction = false) {
 function addXP(points, reason = '') {
   AppState.userState.xp = (AppState.userState.xp || 0) + points;
   const today = getTodayDateString();
-  if (!AppState.userState.streak.historyDates) AppState.userState.streak.historyDates = {};
-  if (!AppState.userState.streak.historyDates[today]) {
-    AppState.userState.streak.historyDates[today] = { xp: 0, actions: 0 };
-  }
-  AppState.userState.streak.historyDates[today].xp += points;
+  const dayLog = ensureDayLog(today);
+  dayLog.xp += points;
   saveState();
   if (reason) {
     showToast(`+${points} XP: ${reason}`, 'success');
   }
 }
 
+window.selectHistoryDate = function (dateStr) {
+  AppState.selectedHistoryDate = dateStr;
+  renderProgressModule();
+};
+
 function renderProgressModule() {
   const s = AppState.userState;
   if (!s) return;
+
+  const today = getTodayDateString();
+  if (!AppState.selectedHistoryDate) {
+    AppState.selectedHistoryDate = today;
+  }
 
   const streakEl = document.getElementById('stat-streak-days');
   const bestStreakEl = document.getElementById('stat-best-streak');
@@ -1716,41 +1962,239 @@ function renderProgressModule() {
   const qLearnedEl = document.getElementById('stat-questions-learned');
   const vocabMasteredEl = document.getElementById('stat-vocab-mastered');
 
-  const qCount = Object.keys(s.questionHistory || {}).length;
+  const masteredReflexCount = Object.values(s.questionHistory || {}).filter((q) => q.mastered).length;
   const vCount = Object.values(s.vocabProgress || {}).filter((v) => v.status === 'mastered').length;
 
   if (streakEl) streakEl.textContent = `${s.streak?.count || 0} ngày`;
   if (bestStreakEl) bestStreakEl.textContent = `Kỷ lục: ${s.streak?.best || 0} ngày`;
   if (xpEl) xpEl.textContent = `${s.xp || 0} XP`;
-  if (qLearnedEl) qLearnedEl.textContent = `${qCount} / ${(AppState.dataset.questions || []).length}`;
+  if (qLearnedEl) qLearnedEl.textContent = `${masteredReflexCount} Đã thạo / ${(AppState.dataset.questions || []).length}`;
   if (vocabMasteredEl) vocabMasteredEl.textContent = `${vCount} / ${(AppState.dataset.vocabulary || []).length}`;
 
   const calGrid = document.getElementById('study-calendar-grid');
   if (calGrid) {
-    const today = getTodayDateString();
     const cells = [];
     for (let i = 27; i >= 0; i--) {
       const dateStr = addDaysToDateString(today, -i);
       const dayLog = s.streak?.historyDates?.[dateStr];
       const xpEarned = dayLog?.xp || 0;
       const dayNum = dateStr.split('-')[2];
+      const isSelected = AppState.selectedHistoryDate === dateStr;
 
-      let bgClass = 'bg-slate-50 text-slate-400 border-slate-200';
+      let bgClass = 'bg-slate-50 text-slate-400 border-slate-200 hover:border-[#9DCCFF]';
       if (xpEarned >= 40) {
         bgClass = 'bg-brand-gradient text-slate-950 border-[#5CA5FF] font-extrabold shadow-sm';
       } else if (xpEarned > 0) {
         bgClass = 'bg-[#9DCCFF]/45 text-slate-900 border-[#9DCCFF] font-bold';
       }
+      if (isSelected) {
+        bgClass += ' ring-2 ring-slate-900 scale-105';
+      }
 
       cells.push(`
-        <div class="p-2 rounded-xl border text-center transition ${bgClass}" title="Ngày ${dateStr}: ${xpEarned} XP">
+        <button type="button" onclick="selectHistoryDate('${dateStr}')"
+          class="p-2 rounded-xl border text-center transition ${bgClass}"
+          title="Bấm để xem chi tiết ngày ${dateStr}">
           <div class="text-xs">${dayNum}</div>
           <div class="text-[10px] opacity-85">${xpEarned > 0 ? `+${xpEarned}` : '-'}</div>
-        </div>
+        </button>
       `);
     }
     calGrid.innerHTML = cells.join('');
   }
+
+  renderCalendarDayDetail(AppState.selectedHistoryDate);
+}
+
+function renderCalendarDayDetail(dateStr) {
+  const detailBox = document.getElementById('calendar-day-detail-box');
+  if (!detailBox) return;
+
+  const s = AppState.userState;
+  const dayLog = s.streak?.historyDates?.[dateStr] || {
+    xp: 0,
+    actions: 0,
+    wrongQuestions: [],
+    correctQuestions: [],
+    masteredQuestions: [],
+    masteredListening: [],
+    masteredVocab: []
+  };
+
+  const allLessons = AppState.dataset.lessons || [];
+  const allQuestions = AppState.dataset.questions || [];
+  const allVocab = AppState.dataset.vocabulary || [];
+  const qHistMap = s.questionHistory || {};
+  const today = getTodayDateString();
+
+  // Dữ liệu của NGÀY ĐANG CHỌN
+  const dayWrongList = dayLog.wrongQuestions || [];
+  const dayCorrectList = dayLog.correctQuestions || [];
+  const dayMasteredListen = (dayLog.masteredListening || []).map(
+    (id) => allLessons.find((l) => l.id === id)?.title || id
+  );
+  const dayMasteredReflex = (dayLog.masteredQuestions || []).map(
+    (id) => allQuestions.find((q) => q.id === id) || { id, vi: id, accepted_answers: [''] }
+  );
+  const dayMasteredVocab = (dayLog.masteredVocab || []).map(
+    (id) => allVocab.find((v) => v.id === id) || { id, word: id, meaning: '' }
+  );
+
+  // Dữ liệu TỔNG TÍCH LŨY TOÀN KHÓA
+  const totalMasteredListening = (s.completedLessons || []).map(
+    (id) => allLessons.find((l) => l.id === id)?.title || id
+  );
+  const totalMasteredReflex = allQuestions.filter((q) => qHistMap[q.id]?.mastered);
+  const totalRepeating3Days = allQuestions.filter(
+    (q) => qHistMap[q.id]?.repeatUntilDate && qHistMap[q.id].repeatUntilDate >= today && !qHistMap[q.id]?.mastered
+  );
+  const totalMasteredVocab = allVocab.filter((v) => s.vocabProgress?.[v.id]?.status === 'mastered');
+
+  detailBox.innerHTML = `
+    <!-- PHẦN 1: CHI TIẾT NGÀY ĐANG CHỌN -->
+    <div class="rounded-2xl bg-brand-gradient-soft border-2 border-[#9DCCFF] p-4 space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h4 class="text-sm font-extrabold text-slate-900">
+          📆 Chi tiết ngày: <span class="text-blue-700">${dateStr}</span> ${dateStr === today ? '(Hôm nay)' : ''}
+        </h4>
+        <div class="flex items-center gap-2 text-xs font-extrabold">
+          <span class="px-2.5 py-1 rounded-full bg-white border border-[#9DCCFF] text-slate-900">⭐ +${dayLog.xp || 0} XP</span>
+          <span class="px-2.5 py-1 rounded-full bg-white border border-[#9DCCFF] text-slate-900">🎯 ${dayLog.actions || 0} hoạt động</span>
+        </div>
+      </div>
+
+      <!-- Những câu làm SAI và ĐÚNG trong ngày đó -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div class="bg-white rounded-xl p-3 border border-rose-200 space-y-1.5">
+          <p class="font-extrabold text-rose-700">❌ Câu Phản xạ làm SAI (${dayWrongList.length}):</p>
+          ${
+            dayWrongList.length === 0
+              ? `<p class="text-slate-400 italic">Không có câu sai nào trong ngày này.</p>`
+              : dayWrongList
+                  .map(
+                    (w) => `
+                  <div class="p-2 rounded-lg bg-rose-50/70 border border-rose-100">
+                    <p class="font-bold text-slate-900">${w.vi}</p>
+                    <p class="text-[11px] text-rose-600 line-through">Gõ sai: ${w.userAnswer || '...'}</p>
+                    <p class="text-[11px] font-semibold text-blue-700">Đúng: ${w.en}</p>
+                  </div>`
+                  )
+                  .join('')
+          }
+        </div>
+
+        <div class="bg-white rounded-xl p-3 border border-[#9DCCFF] space-y-1.5">
+          <p class="font-extrabold text-emerald-700">✅ Câu Phản xạ làm ĐÚNG (${dayCorrectList.length}):</p>
+          ${
+            dayCorrectList.length === 0
+              ? `<p class="text-slate-400 italic">Chưa có câu đúng nào được ghi nhận ngày này.</p>`
+              : dayCorrectList
+                  .map((c) => {
+                    const isM = !!qHistMap[c.id]?.mastered;
+                    return `
+                      <div class="p-2 rounded-lg bg-[#9DCCFF]/15 border border-[#9DCCFF]/50 flex items-center justify-between gap-2">
+                        <div class="min-w-0">
+                          <p class="font-bold text-slate-900 truncate">${c.vi}</p>
+                          <p class="text-[11px] text-emerald-700 truncate">${c.en}</p>
+                        </div>
+                        <button onclick="toggleReflexQuestionMastered('${c.id}')"
+                          class="shrink-0 px-2 py-1 rounded-lg text-[10px] font-extrabold ${
+                            isM ? 'bg-emerald-600 text-white' : 'bg-white border border-[#9DCCFF] text-slate-800'
+                          }">
+                          ${isM ? '✅ Đã thạo' : '☑️ Chọn thạo'}
+                        </button>
+                      </div>`;
+                  })
+                  .join('')
+          }
+        </div>
+      </div>
+
+      <!-- Thành thạo mới trong ngày đó -->
+      <div class="bg-white rounded-xl p-3 border border-[#9DCCFF] text-xs space-y-1">
+        <p class="font-extrabold text-slate-900">🏅 Đạt mốc Thành thạo trong ngày ${dateStr}:</p>
+        <p class="text-slate-700">🎧 <strong>Bài nghe xong (${dayMasteredListen.length}):</strong> ${
+          dayMasteredListen.length > 0 ? dayMasteredListen.join(' • ') : 'Chưa có'
+        }</p>
+        <p class="text-slate-700">⚡ <strong>Phản xạ Đã thạo (${dayMasteredReflex.length}):</strong> ${
+          dayMasteredReflex.length > 0 ? dayMasteredReflex.map((q) => q.vi).join(' • ') : 'Chưa có'
+        }</p>
+        <p class="text-slate-700">🗂️ <strong>Từ mới đã thuộc (${dayMasteredVocab.length}):</strong> ${
+          dayMasteredVocab.length > 0 ? dayMasteredVocab.map((v) => `${v.word} (${v.meaning})`).join(', ') : 'Chưa có'
+        }</p>
+      </div>
+    </div>
+
+    <!-- PHẦN 2: BẢNG TỔNG HỢP THÀNH THẠO TOÀN KHÓA (NGHE • PHẢN XẠ • TỪ MỚI) -->
+    <div class="rounded-2xl bg-white border-2 border-[#9DCCFF] p-4 space-y-3 text-xs">
+      <h4 class="text-sm font-extrabold text-slate-900">🏆 Tổng hợp Thành thạo Toàn khóa & Lịch lặp 3 ngày</h4>
+
+      <!-- Các câu đang bị phạt lặp lại 3 ngày -->
+      <div class="p-3 rounded-xl bg-rose-50/70 border border-rose-200 space-y-1">
+        <p class="font-extrabold text-rose-800">🔄 Các câu đang trong chu kỳ lặp lại 3 ngày (${totalRepeating3Days.length} câu):</p>
+        ${
+          totalRepeating3Days.length === 0
+            ? `<p class="text-slate-500">Hiện không có câu nào bị nợ chu kỳ 3 ngày.</p>`
+            : `<div class="space-y-1 pt-1">` +
+              totalRepeating3Days
+                .map(
+                  (q) =>
+                    `<div class="flex items-center justify-between gap-2 bg-white p-2 rounded-lg border border-rose-100">
+                      <span class="font-semibold text-slate-800 truncate">${q.vi} &rarr; <strong class="text-blue-700">${q.accepted_answers[0]}</strong></span>
+                      <span class="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800">Đến ${qHistMap[q.id].repeatUntilDate}</span>
+                    </div>`
+                )
+                .join('') +
+              `</div>`
+        }
+      </div>
+
+      <!-- Tổng Nghe đã thành thạo -->
+      <div class="p-3 rounded-xl bg-brand-gradient-soft border border-[#9DCCFF] space-y-1">
+        <p class="font-extrabold text-slate-900">🎧 Đã thành thạo Nghe Shadowing (${totalMasteredListening.length} / ${allLessons.length} bài):</p>
+        <p class="text-slate-700">${
+          totalMasteredListening.length > 0 ? totalMasteredListening.join(' • ') : 'Chưa có bài nghe nào đánh dấu hoàn thành.'
+        }</p>
+      </div>
+
+      <!-- Tổng Phản xạ Đã thạo -->
+      <div class="p-3 rounded-xl bg-brand-gradient-soft border border-[#9DCCFF] space-y-1.5">
+        <p class="font-extrabold text-slate-900">⚡ Đã thành thạo Phản xạ (${totalMasteredReflex.length} / ${allQuestions.length} câu):</p>
+        ${
+          totalMasteredReflex.length === 0
+            ? `<p class="text-slate-600">Khi làm đúng câu phản xạ ở Tab 2, bạn hãy bấm "☑️ Chọn Đã thạo" ở ô kết quả trong ngày để lưu vào đây.</p>`
+            : `<div class="max-h-36 overflow-y-auto space-y-1 pr-1">` +
+              totalMasteredReflex
+                .map(
+                  (q) =>
+                    `<div class="flex items-center justify-between gap-2 bg-white p-2 rounded-lg border border-[#9DCCFF]">
+                      <span class="truncate font-medium text-slate-800">✓ ${q.vi} (<span class="text-emerald-700">${q.accepted_answers[0]}</span>)</span>
+                      <button onclick="toggleReflexQuestionMastered('${q.id}')" class="shrink-0 text-[10px] font-bold text-slate-500 hover:text-rose-600">Ôn lại</button>
+                    </div>`
+                )
+                .join('') +
+              `</div>`
+        }
+      </div>
+
+      <!-- Tổng Từ mới đã thành thạo -->
+      <div class="p-3 rounded-xl bg-brand-gradient-soft border border-[#9DCCFF] space-y-1">
+        <p class="font-extrabold text-slate-900">🗂️ Đã thành thạo Từ mới (${totalMasteredVocab.length} / ${allVocab.length} từ):</p>
+        <div class="flex flex-wrap gap-1.5 pt-1">
+          ${
+            totalMasteredVocab.length === 0
+              ? `<span class="text-slate-600">Chưa có từ vựng nào được đánh dấu Đã thuộc.</span>`
+              : totalMasteredVocab
+                  .map(
+                    (v) =>
+                      `<span class="px-2.5 py-1 rounded-full bg-white border border-[#9DCCFF] font-bold text-slate-900">${v.word}: <span class="font-normal text-slate-600">${v.meaning}</span></span>`
+                  )
+                  .join('')
+          }
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 /* ==========================================
