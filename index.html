@@ -282,6 +282,41 @@
           <div id="reflex-card-container" class="pt-2"></div>
         </div>
 
+        <!-- Ô NHỎ THEO DÕI PHẢN XẠ TRONG NGÀY (2 CỘT: CÂU SAI LẶP 3 NGÀY & CÂU ĐÚNG CHỌN ĐÃ THẠO) -->
+        <div id="daily-reflex-tracker-box" class="bg-white rounded-3xl border-2 border-[#9DCCFF] p-5 shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#9DCCFF]/60">
+            <div>
+              <h3 class="text-sm sm:text-base font-extrabold text-slate-900">📌 Bảng Kết quả Phản xạ Hôm nay (Chỉ tính trong ngày)</h3>
+              <p class="text-xs text-slate-600">
+                Câu sai tự động lặp lại trong <strong>3 ngày tới</strong> (nếu sai tiếp lại cộng thêm 3 ngày). Câu đúng bạn có thể tích chọn <strong>"Đã thạo"</strong> hoặc giữ lại để ôn thêm.
+              </p>
+            </div>
+            <button onclick="switchTab('progress')" class="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-brand-gradient text-slate-900 shadow-sm">
+              📅 Xem tổng ở Lịch sử chuyên cần →
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Cột 1: Các câu SAI trong ngày hôm nay -->
+            <div class="rounded-2xl bg-rose-50/60 border border-rose-200 p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <h4 class="text-xs sm:text-sm font-extrabold text-rose-800">❌ Câu SAI hôm nay (Tự lặp 3 ngày)</h4>
+                <span id="today-wrong-count-badge" class="text-xs font-extrabold px-2 py-0.5 rounded-full bg-rose-200 text-rose-900">0 câu</span>
+              </div>
+              <div id="today-wrong-reflex-col" class="space-y-2 max-h-60 overflow-y-auto pr-1 text-xs"></div>
+            </div>
+
+            <!-- Cột 2: Các câu ĐÚNG trong ngày hôm nay (Tuỳ chọn Đã thạo) -->
+            <div class="rounded-2xl bg-brand-gradient-soft border border-[#9DCCFF] p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <h4 class="text-xs sm:text-sm font-extrabold text-slate-900">✅ Câu ĐÚNG hôm nay (Chọn Đã thạo)</h4>
+                <span id="today-correct-count-badge" class="text-xs font-extrabold px-2 py-0.5 rounded-full bg-brand-gradient text-slate-900">0 câu</span>
+              </div>
+              <div id="today-correct-reflex-col" class="space-y-2 max-h-60 overflow-y-auto pr-1 text-xs"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Khung 2: Cẩm nang Lý thuyết & Bài tập Trắc nghiệm Ngữ pháp -->
         <div id="reflex-grammar-wrapper" class="hidden space-y-4"></div>
       </div>
@@ -357,10 +392,10 @@
         <!-- Cột trái: Lịch học 28 ngày (Calendar) & Sao lưu JSON -->
         <div class="lg:col-span-6 space-y-6">
           <div class="bg-white p-6 rounded-3xl border-2 border-[#9DCCFF] shadow-sm space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 class="font-extrabold text-slate-900 text-base">📅 Lịch sử chuyên cần (28 ngày qua)</h3>
-                <p class="text-xs text-slate-500">Mỗi ngày có hoạt động học tập sẽ được tô màu nổi bật.</p>
+                <h3 class="font-extrabold text-slate-900 text-base">📅 Lịch sử chuyên cần (Bấm vào ngày bất kỳ để xem chi tiết)</h3>
+                <p class="text-xs text-slate-500">Xem từng ngày đã học được gì, sai những câu nào, và đã thành thạo Nghe • Phản xạ • Từ mới ra sao.</p>
               </div>
               <div class="flex items-center gap-2 text-[11px] text-slate-600 font-semibold">
                 <span class="inline-block w-3 h-3 rounded bg-slate-100 border"></span> Chưa học
@@ -368,6 +403,9 @@
               </div>
             </div>
             <div id="study-calendar-grid" class="grid grid-cols-7 gap-2"></div>
+
+            <!-- Khung chi tiết của Ngày đang chọn trên Lịch sử chuyên cần + Tổng hợp thành thạo -->
+            <div id="calendar-day-detail-box" class="pt-4 border-t-2 border-[#9DCCFF]/60 space-y-4"></div>
           </div>
 
           <!-- Sao lưu & Khôi phục thủ công bằng File JSON -->
