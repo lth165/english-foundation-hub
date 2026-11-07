@@ -407,6 +407,17 @@ class AccountSyncManager {
       (local.customDataset?.questions || []).forEach((q) => {
         if (!merged.customDataset.questions.some((x) => x.id === q.id)) merged.customDataset.questions.push(q);
       });
+      (local.customDataset?.vocabulary || []).forEach((v) => {
+        if (!merged.customDataset.vocabulary.some((x) => x.id === v.id)) merged.customDataset.vocabulary.push(v);
+      });
+    }
+
+    // Gộp danh sách bài học YouTube Shadowing
+    if (local.youtubeLessons || remote.youtubeLessons) {
+      merged.youtubeLessons = [...(remote.youtubeLessons || [])];
+      (local.youtubeLessons || []).forEach((yt) => {
+        if (!merged.youtubeLessons.some((x) => x.id === yt.id)) merged.youtubeLessons.unshift(yt);
+      });
     }
 
     merged.updatedAt = new Date().toISOString();
